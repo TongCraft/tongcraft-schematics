@@ -52,7 +52,7 @@ jobs:
           cache: npm
       - run: npm ci --ignore-scripts
       - name: Prepare deployment configuration
-        run: node scripts/prepare-deploy.mjs
+        run: npm run build && node scripts/prepare-deploy.mjs
         env:
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           D1_DATABASE_ID: ${{ vars.D1_DATABASE_ID }}

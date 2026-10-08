@@ -4,3 +4,4 @@ output/
 .playwright-cli/
 coverage/
 package-lock.json
+web/assets/

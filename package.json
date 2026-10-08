@@ -12,21 +12,36 @@
     "format:check": "prettier --check .",
     "test": "tsx --test test/*.test.ts",
     "test:e2e": "node --test test/integration.mjs",
-    "typecheck": "tsc --noEmit",
+    "test:render": "tsx --test test/render-layers.native.ts",
+    "typecheck": "tsc --noEmit && tsc -p client/tsconfig.json",
     "check": "npm run format:check && npm run typecheck && npm test && wrangler deploy --dry-run --outdir .wrangler/dry-run",
     "deploy": "wrangler deploy",
     "db:local": "wrangler d1 migrations apply tongcraft-schematics --local",
-    "db:remote": "wrangler d1 migrations apply tongcraft-schematics --remote"
+    "db:remote": "wrangler d1 migrations apply tongcraft-schematics --remote",
+    "build": "node scripts/build-renderer.mjs",
+    "predev": "npm run build",
+    "predeploy": "npm run build",
+    "precheck": "npm run build",
+    "render:local": "tsx scripts/render-local.ts"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "5.20261008.1",
     "@types/node": "26.6.4",
+    "@types/three": "0.183.1",
+    "esbuild": "0.28.2",
     "prettier": "^3.9.9",
     "tsx": "4.23.15",
     "typescript": "7.0.2",
     "wrangler": "4.148.0"
   },
   "overrides": {
-    "sharp": "0.35.5"
+    "sharp": "0.35.5",
+    "node-gyp": "12.4.0",
+    "tar": "7.5.22"
+  },
+  "dependencies": {
+    "block-model-renderer": "2.20.0",
+    "fflate": "0.8.3",
+    "three": "0.184.0"
   }
 }

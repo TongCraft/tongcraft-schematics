@@ -73,7 +73,7 @@ test("accepts a valid bounded Litematica file and extracts geometry", () => {
   assert.equal(result.solidBlocks, 1);
   assert.deepEqual(result.regions, ["Main"]);
   assert.deepEqual(result.materials, [{ id: "minecraft:stone", count: 1 }]);
-  assert.match(result.previewSvg, /^<svg/);
+  assert.equal(result.palette[1].id, "minecraft:stone");
 });
 
 test("rejects malformed and unsupported schematics", () => {

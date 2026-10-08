@@ -1,3 +1,5 @@
+import { loadBlockNames, materialName, materialsCsv } from "./materials.js";
+
 const $ = (selector) => document.querySelector(selector);
 const grid = $("#itemGrid");
 const status = $("#catalogStatus");
@@ -12,6 +14,161 @@ const state = {
 };
 let toastTimer;
 let searchTimer;
+let rendererModule;
+let detailController;
+let detailViewer;
+let localFileUrl;
+const imageUrls = new Set();
+const getRenderer = () =>
+  (rendererModule ??= import("/assets/renderSchematic.js"));
+const previewObserver = new IntersectionObserver(
+  (entries) => {
+    for (const { target, isIntersecting } of entries) {
+      if (!isIntersecting) continue;
+      previewObserver.unobserve(target);
+      getRenderer()
+        .then((renderer) =>
+          renderer.renderThumbnail(target, target.catalogItem),
+        )
+        .then((blob) => {
+          if (!target.isConnected) return;
+          const url = URL.createObjectURL(blob);
+          imageUrls.add(url);
+          const image = element("img");
+          image.src = url;
+          image.alt = `${target.catalogItem.title} 的投影预览`;
+          target.replaceChildren(image);
+        })
+        .catch(() => {
+          if (target.isConnected)
+            target.replaceChildren(
+              element("span", "preview-missing", "点击查看 3D"),
+            );
+        });
+    }
+  },
+  { rootMargin: "100px" },
+);
+
+function closeViewer() {
+  detailController?.abort();
+  detailViewer?.dispose();
+  detailViewer = null;
+}
+
+async function mountPreview(area, entry, localBytes) {
+  const controller = new AbortController();
+  detailController = controller;
+  const viewport = element("div", "schematic-viewport");
+  const message = element("p", "detail-preview-note", "正在载入完整投影…");
+  message.setAttribute("role", "status");
+  const tools = element("div", "preview-tools");
+  const reset = element("button", "button", "重置视角");
+  const capture = element("button", "button", "保存预览图");
+  const packLabel = element("label", "button", "选择资源包");
+  const pack = element("input");
+  pack.type = "file";
+  pack.accept = ".zip,.jar";
+  pack.hidden = true;
+  packLabel.append(pack);
+  const layerLabel = element("label", "layer-control");
+  const layerToggle = element("input");
+  layerToggle.type = "checkbox";
+  const layer = element("input");
+  layer.type = "range";
+  layer.disabled = true;
+  layer.setAttribute("aria-label", "最高可见层");
+  const layerValue = element("span", "layer-value", "全部层");
+  layerLabel.append(
+    layerToggle,
+    element("span", "", "分层"),
+    layer,
+    layerValue,
+  );
+  tools.append(reset, capture, packLabel, layerLabel);
+  for (const button of [reset, capture]) {
+    button.type = "button";
+    button.disabled = true;
+  }
+  area.append(viewport, tools, message);
+  const renderer = await getRenderer();
+  const bytes = localBytes ?? (await renderer.loadSchematic(entry));
+  if (controller.signal.aborted) return;
+  const build = async (resourcePack) => {
+    detailViewer?.dispose();
+    detailViewer = null;
+    reset.disabled =
+      capture.disabled =
+      layerToggle.disabled =
+      pack.disabled =
+        true;
+    layer.disabled = true;
+    layerToggle.checked = false;
+    try {
+      const viewer = await renderer.renderSchematic(viewport, bytes, {
+        signal: controller.signal,
+        resourcePack,
+        onProgress: (text) => {
+          message.textContent = text;
+        },
+      });
+      if (controller.signal.aborted) {
+        viewer.dispose();
+        return;
+      }
+      detailViewer = viewer;
+      layer.min = Math.min(...viewer.schematic.regions.map((r) => r.min[1]));
+      layer.max = Math.max(...viewer.schematic.regions.map((r) => r.max[1]));
+      // Reserve the longest coordinate once, before dragging can change it.
+      layerValue.style.setProperty(
+        "--layer-value-width",
+        `${Math.max(8, layer.min.length + 5, layer.max.length + 5)}ch`,
+      );
+      layer.value = layer.max;
+      layerValue.textContent = "全部层";
+      reset.disabled = capture.disabled = layerToggle.disabled = false;
+    } catch (error) {
+      if (error.name !== "AbortError")
+        message.textContent = `预览失败：${error.message}`;
+    } finally {
+      pack.disabled = false;
+    }
+  };
+  reset.addEventListener("click", () => detailViewer?.reset());
+  capture.addEventListener("click", async () => {
+    try {
+      saveBlob(await detailViewer.capture(), `${entry.title}-预览.png`);
+    } catch (error) {
+      toast(error.message);
+    }
+  });
+  pack.addEventListener("change", () => {
+    if (pack.files[0]) build(pack.files[0]);
+  });
+  const updateLayer = () => {
+    layer.disabled = !layerToggle.checked;
+    layerValue.textContent = layerToggle.checked
+      ? `Y ≤ ${layer.value}`
+      : "全部层";
+    detailViewer
+      ?.setLayer(layerToggle.checked ? Number(layer.value) : null)
+      .catch((error) => toast(error.message));
+  };
+  layerToggle.addEventListener("change", updateLayer);
+  layer.addEventListener("input", updateLayer);
+  await build();
+}
+
+function saveBlob(blob, filename) {
+  const url = URL.createObjectURL(blob),
+    link = element("a");
+  link.href = url;
+  link.download = filename.replace(/[\\/:*?"<>|]/g, "_");
+  document.body.append(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
 
 function toast(message) {
   const box = $("#toast");
@@ -70,15 +227,9 @@ function card(entry) {
   art.type = "button";
   art.setAttribute("aria-label", `查看 ${entry.title} 的详情`);
   art.addEventListener("click", () => openDetail(entry.id));
-  if (entry.previewUrl) {
-    const image = element("img");
-    image.src = entry.previewUrl;
-    image.alt = `${entry.title} 的结构预览`;
-    image.loading = "lazy";
-    art.append(image);
-  } else {
-    art.append(element("span", "preview-missing", "暂无预览"));
-  }
+  art.append(element("span", "preview-missing", "正在生成预览…"));
+  art.catalogItem = entry;
+  previewObserver.observe(art);
   const body = element("div", "card-body");
   body.append(element("h3", "card-title", entry.title));
   body.append(
@@ -112,6 +263,9 @@ async function loadItems() {
   try {
     const data = await api(`/api/items?${params}`);
     state.total = data.total;
+    previewObserver.disconnect();
+    for (const url of imageUrls) URL.revokeObjectURL(url);
+    imageUrls.clear();
     grid.replaceChildren();
     data.items.forEach((entry) => grid.append(card(entry)));
     if (data.items.length === 0) {
@@ -152,30 +306,20 @@ async function loadItems() {
   }
 }
 
-async function openDetail(id) {
+async function openDetail(id, localEntry, localBytes) {
   try {
-    const { item: entry } = await api(`/api/items/${id}`);
+    const [entry, blockNames] = await Promise.all([
+      localEntry ?? api(`/api/items/${id}`).then((data) => data.item),
+      loadBlockNames().catch((error) => {
+        toast(error.message);
+        return {};
+      }),
+    ]);
+    closeViewer();
     const content = $("#detailContent");
     content.replaceChildren();
     const layout = element("div", "detail-layout");
     const previewArea = element("div");
-    if (entry.previewUrl) {
-      const preview = element("img", "detail-preview");
-      preview.src = entry.previewUrl;
-      preview.alt = `${entry.title} 的结构预览`;
-      previewArea.append(preview);
-    } else {
-      previewArea.append(
-        element("div", "detail-preview preview-missing", "暂无预览"),
-      );
-    }
-    previewArea.append(
-      element(
-        "p",
-        "detail-preview-note",
-        "结构示意图，方块使用近似颜色；请以原文件为准。",
-      ),
-    );
     const info = element("div");
     info.append(element("h3", "detail-title", entry.title));
     info.append(
@@ -202,9 +346,11 @@ async function openDetail(id) {
     const actions = element("div", "detail-actions");
     const download = element("a", "button button-primary", "下载 .litematic");
     download.href = entry.downloadUrl;
+    if (localEntry) download.download = `${entry.title}.litematic`;
     actions.append(download);
     const share = element("button", "button", "复制链接");
     share.type = "button";
+    share.hidden = Boolean(localEntry);
     share.addEventListener("click", async () => {
       await navigator.clipboard.writeText(
         `${location.origin}/items/${entry.id}`,
@@ -213,6 +359,7 @@ async function openDetail(id) {
     });
     actions.append(share);
     if (
+      !localEntry &&
       state.member &&
       (state.member.uuid === entry.owner.uuid || state.member.role === "admin")
     ) {
@@ -241,7 +388,7 @@ async function openDetail(id) {
     if (materials.length) {
       const csv = element("button", "button", "下载 CSV");
       csv.type = "button";
-      csv.addEventListener("click", () => downloadMaterials(entry));
+      csv.addEventListener("click", () => downloadMaterials(entry, blockNames));
       materialHead.append(csv);
     }
     content.append(materialHead);
@@ -249,7 +396,7 @@ async function openDetail(id) {
       element(
         "p",
         "materials-note",
-        "按文件中的方块 ID 统计；双格方块、容器与配方请在游戏内确认。",
+        "按文件中的方块数量统计；双格方块、容器与配方请在游戏内确认。",
       ),
     );
     if (materials.length) {
@@ -257,17 +404,24 @@ async function openDetail(id) {
       const table = element("table", "materials-table");
       const head = element("thead");
       const headRow = element("tr");
-      for (const label of ["方块 ID", "数量", "64 个/组"])
+      for (const label of ["方块名称", "数量", "64 个/组"])
         headRow.append(element("th", "", label));
       head.append(headRow);
       table.append(head);
       const body = element("tbody");
       for (const material of materials) {
         const row = element("tr");
-        const idCell = element("td");
-        idCell.append(element("code", "", material.id));
+        const nameCell = element("td");
+        nameCell.append(
+          element(
+            "span",
+            "material-name",
+            materialName(material.id, blockNames),
+          ),
+          element("code", "material-id", material.id),
+        );
         row.append(
-          idCell,
+          nameCell,
           element("td", "", material.count.toLocaleString("zh-CN")),
           element(
             "td",
@@ -284,16 +438,19 @@ async function openDetail(id) {
       content.append(element("p", "subtle", "暂无材料数据。"));
     }
     show($("#detailDialog"));
+    mountPreview(previewArea, entry, localBytes).catch((error) => {
+      if (error.name !== "AbortError")
+        previewArea.append(
+          element("p", "subtle", `预览失败：${error.message}`),
+        );
+    });
   } catch (error) {
     toast(error.message);
   }
 }
 
-function downloadMaterials(entry) {
-  const rows = ["方块 ID,数量,组数(64),余数"];
-  for (const { id, count } of entry.materials)
-    rows.push(`${id},${count},${Math.floor(count / 64)},${count % 64}`);
-  const blob = new Blob(["\ufeff", rows.join("\r\n"), "\r\n"], {
+function downloadMaterials(entry, names) {
+  const blob = new Blob([materialsCsv(entry.materials, names)], {
     type: "text/csv;charset=utf-8",
   });
   const url = URL.createObjectURL(blob);
@@ -338,6 +495,46 @@ async function upload(event) {
 }
 
 async function start() {
+  $("#detailDialog").addEventListener("close", closeViewer);
+  $("#localPreviewButton").addEventListener("click", () =>
+    $("#localPreviewInput").click(),
+  );
+  $("#localPreviewInput").addEventListener("change", async (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+    try {
+      if (file.size > 16 * 1024 * 1024) throw new Error("文件不能超过 16 MiB");
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      const schematic = await (await getRenderer()).decodeSchematic(bytes);
+      const hash = Array.from(
+        new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)),
+        (n) => n.toString(16).padStart(2, "0"),
+      ).join("");
+      if (localFileUrl) URL.revokeObjectURL(localFileUrl);
+      localFileUrl = URL.createObjectURL(file);
+      await openDetail(
+        null,
+        {
+          id: null,
+          title: file.name.replace(/\.litematic$/i, ""),
+          description: "本地文件，仅在你的浏览器内预览。",
+          owner: { name: "本地预览" },
+          blocks: schematic.solidBlocks,
+          regions: schematic.regions.length,
+          size: file.size,
+          createdAt: file.lastModified,
+          tags: [],
+          sha256: hash,
+          downloadUrl: localFileUrl,
+          materials: schematic.materials,
+        },
+        bytes,
+      );
+    } catch (error) {
+      toast(error.message);
+    }
+    event.target.value = "";
+  });
   try {
     const health = await api("/api/health");
     state.loginAvailable = health.loginAvailable !== false;

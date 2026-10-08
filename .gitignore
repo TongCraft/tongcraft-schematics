@@ -6,3 +6,4 @@ coverage/
 output/
 .playwright-cli/
 *.log
+web/assets/

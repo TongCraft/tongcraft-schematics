@@ -35,7 +35,28 @@ Wrangler 默认在本地模拟 D1 和 R2。公开浏览不需要 Sync 服务；�
 node scripts/local-preview.mjs "/path/to/example.litematic"
 ```
 
-脚本只在 `.wrangler/` 中写入本地测试数据，并打印可在浏览器打开的本地地址。预览图是从投影自动生成的结构示意，采用近似颜色和采样后的俯视轮廓；材料 CSV 按方块 ID 统计，不自动换算合成配方。
+脚本只在 `.wrangler/` 中写入本地测试数据，并打印可在浏览器打开的本地地址。网页「本地预览」可以直接读取电脑里的投影，无须上传。材料 CSV 按方块 ID 统计，不自动换算合成配方。
+
+### 3D 渲染
+
+入口是 [`client/renderSchematic.ts`](../client/renderSchematic.ts)，逐方块读取原始坐标和状态，通过 Three.js 与 [block-model-renderer](https://github.com/ewanhowell5195/block-model-renderer)（MPL-2.0）构建真实模型；保留负尺寸区域、多区域位置、孔洞、朝向、半砖与楼梯形状。隐藏面剔除和网格合并仅减少不可见表面与绘制次数，不采样或缩减原始方块。
+
+分层由 [`shared/render-layers.ts`](../shared/render-layers.ts) 管理：主体按高度和方块数量分块，一次生成后复用；选择 `Y ≤ 所选高度` 时，只按需生成所在块的下部与新露出的顶层，缓存后直接切换可见性。边界保留不绘制的真实邻居方块，保证玻璃、流体和模型的面剔除正确。共用纹理图集，空闲时预加载相邻高度；切面几何缓存采用 LRU，默认最多 16 项或 32 MiB，当前使用的切面保留。快速拖动取消过时请求，导出图片会等待当前分层完成。
+
+`npm run build` 在构建时下载校验固定版本的 Minecraft 客户端及中文语言文件，并提取模型、纹理和方块名称。资源与渲染代码由本站静态资源提供，运行时不依赖第三方 CDN，也不写入 R2；生成文件在 `web/assets/`，不提交 Git。当前默认原版资源为 26.2；可选择本地资源包 `.zip` 或客户端 `.jar`。默认生物群系色调和展示光照可能与游戏环境不同，普通实体和告示牌文字暂不渲染。
+
+首个可见卡片会读取原文件生成缩略图；卡片与详情复用下载数据，缩略图缓存在浏览器中。这些读取仍受 R2 每日操作限额保护。关闭详情会取消构建并释放 WebGL 资源。
+
+需要在 Node.js 中离线导出三张真实模型渲染图：
+
+```sh
+npm rebuild gl skia-canvas sharp
+npm run build
+npm run render:local -- "/path/to/example.litematic"
+npm run test:render
+```
+
+图片与统计写入忽略的 `output/render/`；`test:render` 使用真实模型检查分块交界、顶面、玻璃、流体与切面缓存。CI 和网页运行均不需要本机原生渲染模块。
 
 ```sh
 npm run check
@@ -56,7 +77,7 @@ npm audit --audit-level=high
 1. 登录 Cloudflare，并确认 `weiuou.top` 是已激活的 zone：`npx wrangler login`。
 2. 创建资源：`npx wrangler r2 bucket create tongcraft-schematics`、`npx wrangler d1 create tongcraft-schematics`；记下 D1 数据库 UUID 和 Cloudflare Account ID。
 3. 部署 [TongCraft Sync](https://github.com/TongCraft/tongcraft-sync) 的素材库票据接口，确认它有公网 HTTPS 地址，并把该地址设置为 `SYNC_API_URL`。
-4. 设置 `CLOUDFLARE_ACCOUNT_ID`、`D1_DATABASE_ID`、`SYNC_API_URL` 环境变量，执行 `node scripts/prepare-deploy.mjs`，然后运行 `npx wrangler d1 migrations apply tongcraft-schematics --remote --config .wrangler/deploy.json` 和 `npx wrangler deploy --config .wrangler/deploy.json`。
+4. 设置 `CLOUDFLARE_ACCOUNT_ID`、`D1_DATABASE_ID`、`SYNC_API_URL` 环境变量，执行 `npm run build` 与 `node scripts/prepare-deploy.mjs`，然后运行 `npx wrangler d1 migrations apply tongcraft-schematics --remote --config .wrangler/deploy.json` 和 `npx wrangler deploy --config .wrangler/deploy.json`。
 5. 检查 `https://library.weiuou.top/api/health`、网页浏览、模组登录、上传与下载。
 
 如果 Sync 服务还没有公网 HTTPS 地址，可以临时设置 `ALLOW_PUBLIC_PREVIEW=true`、不设置 `SYNC_API_URL` 后生成部署配置。站点会公开显示浏览页，但登录和上传按钮暂不开放；接入 Sync 后重新部署即可启用。GitHub 自动部署也可通过仓库变量 `ALLOW_PUBLIC_PREVIEW=true` 发布只读预览；正式开放上传时设置 `SYNC_API_URL` 并把该变量改为 `false`。修改部署变量后可在 Actions 中手动运行 CI 工作流，或推送新提交，重新发布配置。

@@ -13,6 +13,8 @@ if (!filePath) {
   process.exit(1);
 }
 
+await run(process.execPath, ["scripts/build-renderer.mjs"]);
+
 async function freePort() {
   const server = createTcpServer();
   await new Promise((done) => server.listen(0, "127.0.0.1", done));

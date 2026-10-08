@@ -243,19 +243,13 @@ test(
     assert.equal(listed.total, 1);
     assert.equal(listed.items[0].id, id);
     assert.equal(listed.items[0].blocks, 1);
-    assert.equal(listed.items[0].previewUrl, `/api/items/${id}/preview`);
+    assert.equal(listed.items[0].previewUrl, undefined);
     const detail = await (
       await checked(await fetch(`${base}/api/items/${id}`), 200)
     ).json();
     assert.deepEqual(detail.item.materials, [
       { id: "minecraft:stone", count: 1 },
     ]);
-    const preview = await checked(
-      await fetch(`${base}/api/items/${id}/preview`),
-      200,
-    );
-    assert.match(preview.headers.get("content-type"), /image\/svg\+xml/);
-    assert.match(await preview.text(), /<svg/);
     const download = await checked(
       await fetch(`${base}/api/items/${id}/file`),
       200,

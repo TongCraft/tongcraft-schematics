@@ -1,0 +1,14 @@
+{
+  "version": "26.2",
+  "client": {
+    "sha1": "2dc72797acbc1b63fc16a11c4ac393605f453754",
+    "size": 39193383,
+    "url": "https://piston-data.mojang.com/v1/objects/2dc72797acbc1b63fc16a11c4ac393605f453754/client.jar"
+  },
+  "language": {
+    "locale": "zh_cn",
+    "sha1": "3c1a6e6c941c547d2ec8b6990c8201d6585e3d59",
+    "size": 555676,
+    "url": "https://resources.download.minecraft.net/3c/3c1a6e6c941c547d2ec8b6990c8201d6585e3d59"
+  }
+}
