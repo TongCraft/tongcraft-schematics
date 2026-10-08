@@ -459,7 +459,11 @@ export default {
     const path = url.pathname;
     try {
       if (path === "/api/health" && request.method === "GET")
-        return json({ ok: true, protocol: 1 });
+        return json({
+          ok: true,
+          protocol: 1,
+          loginAvailable: Boolean(env.SYNC_API_URL),
+        });
       if (path === "/api/usage" && request.method === "GET")
         return await usage(request, env);
       if (path === "/api/session" && request.method === "GET")

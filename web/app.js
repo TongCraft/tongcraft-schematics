@@ -5,6 +5,7 @@ const state = {
   member: null,
   page: 1,
   total: 0,
+  loginAvailable: true,
   q: "",
   tag: "",
   loading: false,
@@ -58,6 +59,7 @@ function setMember(member) {
   state.member = member;
   $("#memberLabel").hidden = !member;
   $("#memberLabel").textContent = member ? `玩家 · ${member.name}` : "";
+  $("#loginButton").hidden = !member && !state.loginAvailable;
   $("#loginButton").textContent = member ? "退出登录" : "玩家登录";
   $("#uploadButton").hidden = !member;
 }
@@ -240,6 +242,17 @@ async function upload(event) {
 }
 
 async function start() {
+  try {
+    const health = await api("/api/health");
+    state.loginAvailable = health.loginAvailable !== false;
+  } catch {
+    // The catalog request below will report a service error if needed.
+  }
+  if (!state.loginAvailable) {
+    const share = $("#heroUploadButton");
+    share.disabled = true;
+    share.textContent = "上传即将开放";
+  }
   document
     .querySelectorAll("[data-close]")
     .forEach((button) =>
