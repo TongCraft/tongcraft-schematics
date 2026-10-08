@@ -1,0 +1,18 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "tongcraft-schematics",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-08",
+  "workers_dev": true,
+  "routes": [{ "pattern": "library.weiuou.top", "custom_domain": true }],
+  "assets": { "directory": "./web", "binding": "ASSETS" },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "tongcraft-schematics",
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "migrations",
+    },
+  ],
+  "r2_buckets": [{ "binding": "FILES", "bucket_name": "tongcraft-schematics" }],
+}

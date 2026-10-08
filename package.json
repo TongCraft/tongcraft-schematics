@@ -1,0 +1,31 @@
+{
+  "name": "tongcraft-schematics",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "wrangler dev",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "tsx --test test/*.test.ts",
+    "typecheck": "tsc --noEmit",
+    "check": "npm run format:check && npm run typecheck && npm test && wrangler deploy --dry-run --outdir .wrangler/dry-run",
+    "deploy": "wrangler deploy",
+    "db:local": "wrangler d1 migrations apply tongcraft-schematics --local",
+    "db:remote": "wrangler d1 migrations apply tongcraft-schematics --remote"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "5.20261008.1",
+    "@types/node": "26.6.4",
+    "prettier": "^3.9.9",
+    "tsx": "4.23.15",
+    "typescript": "7.0.2",
+    "wrangler": "4.148.0"
+  },
+  "overrides": {
+    "sharp": "0.35.5"
+  }
+}

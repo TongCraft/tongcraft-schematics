@@ -1,0 +1,6 @@
+node_modules/
+.wrangler/
+output/
+.playwright-cli/
+coverage/
+package-lock.json
