@@ -31,10 +31,17 @@ Wrangler 默认在本地模拟 D1 和 R2。公开浏览不需要 Sync 服务；�
 
 ```sh
 npm run check
+npm run test:e2e
 npm audit --audit-level=high
 ```
 
 蓝图限制：压缩文件最大 16 MiB，解压 NBT 最大 64 MiB、3200 万方块；每名成员每 24 小时最多上传 20 份。服务器端校验格式、结构和大小并计算 SHA-256；相同成员不能重复发布同一文件。所有上传都应是上传者有权公开的作品。
+
+### R2 免费额度保护
+
+素材库只使用 R2 Standard，并在 D1 中原子预留容量和操作次数：最多存储 **5 GB**，每天最多 **500 次写入**和 **10,000 次读取**。即使按连续 31 天计算，站内操作也至多为 15,500 次 A 类和 310,000 次 B 类，低于 R2 当前每月 100 万 / 1000 万次的免费额度。删除 R2 对象不计操作费；删除成功后才释放存储容量。管理员登录后可通过 `GET /api/usage` 查看站内计数。([R2 定价](https://developers.cloudflare.com/r2/pricing/))
+
+这些限额只约束本项目经 Worker 发起的操作，不能限制同一 Cloudflare 账号内其他 R2 bucket、控制台或 API 的使用。应同时在 Cloudflare 控制台查看账号级 R2 用量与账单；本站不会主动突破自身限额。
 
 ## Cloudflare 部署
 

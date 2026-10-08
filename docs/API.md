@@ -9,6 +9,7 @@ Base URL: `https://library.weiuou.top`. All API responses are JSON unless an end
 | `GET`    | `/api/items/{id}`                    | Public metadata for one item                                            |
 | `GET`    | `/api/items/{id}/file`               | Original file, with `X-Content-SHA256` for integrity checks             |
 | `GET`    | `/api/session`                       | Current website member or `null`                                        |
+| `GET`    | `/api/usage`                         | Admin-only R2 storage and daily operation counters                      |
 | `POST`   | `/api/session/exchange`              | Redeem `{ "ticket": "..." }` from Sync; sets HttpOnly cookie            |
 | `DELETE` | `/api/session`                       | Log out and clear website cookie                                        |
 | `POST`   | `/api/items`                         | Member upload as multipart form: `file`, `title`, `description`, `tags` |

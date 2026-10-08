@@ -37,6 +37,76 @@ class ApiError extends Error {
 
 const SESSION_COOKIE = "tc_library_session";
 const PAGE_SIZE = 24;
+// Each dimension stays well below the account-wide R2 Standard free allowance.
+const STORAGE_LIMIT = 5_000_000_000;
+const DAILY_PUT_LIMIT = 500;
+const DAILY_GET_LIMIT = 10_000;
+
+function today(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+async function reserveStorage(env: Env, bytes: number): Promise<void> {
+  const result = await env.DB.prepare(
+    "UPDATE storage_budget SET used_bytes=used_bytes+? WHERE id=1 AND used_bytes+?<=?",
+  )
+    .bind(bytes, bytes, STORAGE_LIMIT)
+    .run();
+  if (result.meta.changes !== 1)
+    throw new ApiError(507, "素材库免费存储额度已满，暂时无法上传");
+}
+
+async function releaseStorage(env: Env, bytes: number): Promise<void> {
+  await env.DB.prepare(
+    "UPDATE storage_budget SET used_bytes=used_bytes-? WHERE id=1",
+  )
+    .bind(bytes)
+    .run();
+}
+
+async function reserveR2Operation(
+  env: Env,
+  kind: "put" | "get",
+): Promise<void> {
+  const puts = kind === "put" ? 1 : 0;
+  const gets = kind === "get" ? 1 : 0;
+  const result = await env.DB.prepare(
+    "INSERT INTO r2_daily_usage(day,puts,gets) VALUES(?,?,?) " +
+      "ON CONFLICT(day) DO UPDATE SET puts=puts+excluded.puts, gets=gets+excluded.gets " +
+      "WHERE puts+excluded.puts<=? AND gets+excluded.gets<=?",
+  )
+    .bind(today(), puts, gets, DAILY_PUT_LIMIT, DAILY_GET_LIMIT)
+    .run();
+  if (result.meta.changes !== 1)
+    throw new ApiError(
+      429,
+      kind === "put"
+        ? "今日上传额度已用尽，请明天再试"
+        : "今日下载额度已用尽，请明天再试",
+    );
+}
+
+async function usage(request: Request, env: Env): Promise<Response> {
+  const member = await requireSession(request, env);
+  if (member.role !== "admin") throw new ApiError(403, "仅管理员可查看用量");
+  const storage = await env.DB.prepare(
+    "SELECT used_bytes FROM storage_budget WHERE id=1",
+  ).first<{ used_bytes: number }>();
+  const daily = await env.DB.prepare(
+    "SELECT puts,gets FROM r2_daily_usage WHERE day=?",
+  )
+    .bind(today())
+    .first<{ puts: number; gets: number }>();
+  return json({
+    storageBytes: storage?.used_bytes ?? 0,
+    storageLimit: STORAGE_LIMIT,
+    today: today(),
+    puts: daily?.puts ?? 0,
+    putLimit: DAILY_PUT_LIMIT,
+    gets: daily?.gets ?? 0,
+    getLimit: DAILY_GET_LIMIT,
+  });
+}
 
 function json(
   data: unknown,
@@ -300,11 +370,15 @@ async function upload(request: Request, env: Env): Promise<Response> {
   if (duplicate) throw new ApiError(409, "你已经上传过这份蓝图");
   const id = crypto.randomUUID();
   const key = `items/${id}.litematic`;
-  await env.FILES.put(key, bytes, {
-    httpMetadata: { contentType: "application/octet-stream" },
-    customMetadata: { sha256: hash },
-  });
+  await reserveStorage(env, bytes.byteLength);
+  let putAttempted = false;
   try {
+    await reserveR2Operation(env, "put");
+    putAttempted = true;
+    await env.FILES.put(key, bytes, {
+      httpMetadata: { contentType: "application/octet-stream" },
+      customMetadata: { sha256: hash },
+    });
     await env.DB.prepare(
       "INSERT INTO items(id,owner_uuid,owner_name,title,description,tags,hash,file_size,block_count,region_count,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
     )
@@ -323,7 +397,15 @@ async function upload(request: Request, env: Env): Promise<Response> {
       )
       .run();
   } catch (error) {
-    await env.FILES.delete(key);
+    try {
+      if (putAttempted) await env.FILES.delete(key);
+      await releaseStorage(env, bytes.byteLength);
+    } catch (cleanupError) {
+      console.error(
+        "R2 upload cleanup failed; capacity remains reserved",
+        cleanupError,
+      );
+    }
     throw error;
   }
   return json({ id, url: `/items/${id}` }, 201);
@@ -339,18 +421,24 @@ async function removeItem(
   const row = await getItem(id, env);
   if (row.owner_uuid !== member.uuid && member.role !== "admin")
     throw new ApiError(403, "只能删除自己上传的蓝图");
-  await env.DB.prepare(
+  const removed = await env.DB.prepare(
     "UPDATE items SET deleted_at=? WHERE id=? AND deleted_at IS NULL",
   )
     .bind(Date.now(), id)
     .run();
-  await env.FILES.delete(`items/${id}.litematic`).catch((error) =>
-    console.error("R2 cleanup failed", error),
-  );
+  if (removed.meta.changes === 1) {
+    try {
+      await env.FILES.delete(`items/${id}.litematic`);
+      await releaseStorage(env, row.file_size);
+    } catch (error) {
+      console.error("R2 cleanup failed; capacity remains reserved", error);
+    }
+  }
   return json({ ok: true });
 }
 
 async function downloadItem(row: ItemRow, env: Env): Promise<Response> {
+  await reserveR2Operation(env, "get");
   const object = await env.FILES.get(`items/${row.id}.litematic`);
   if (!object) throw new ApiError(503, "蓝图文件暂时不可用");
   return new Response(object.body, {
@@ -372,6 +460,8 @@ export default {
     try {
       if (path === "/api/health" && request.method === "GET")
         return json({ ok: true, protocol: 1 });
+      if (path === "/api/usage" && request.method === "GET")
+        return await usage(request, env);
       if (path === "/api/session" && request.method === "GET")
         return json({ member: await session(request, env) });
       if (path === "/api/session" && request.method === "DELETE") {
