@@ -34,7 +34,7 @@ jobs:
 
   deploy:
     name: Deploy Cloudflare Worker
-    if: github.event_name == 'push' && vars.DEPLOY_ENABLED == 'true'
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && vars.DEPLOY_ENABLED == 'true'
     needs: check
     runs-on: ubuntu-latest
     timeout-minutes: 15

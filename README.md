@@ -2,7 +2,7 @@
 
 一个面向 TongCraft 玩家、可在网页和 [TongCraft Sync](https://github.com/TongCraft/tongcraft-sync) 模组中浏览的 `.litematic` 素材库。网页公开浏览和下载；已通过 Sync 邀请的成员可以上传，校验成功后立即公开。项目代码放在 GitHub，蓝图文件放在 Cloudflare R2，目录和网页会话放在 D1。
 
-测试域名计划使用 **`library.weiuou.top`**。项目可先在本地运行，Cloudflare 资源和凭据配置完成后再发布。
+测试站点是 **https://library.weiuou.top**，同步服务是 **https://sync.weiuou.top**。
 
 ## 架构
 
@@ -51,7 +51,7 @@ npm audit --audit-level=high
 4. 设置 `CLOUDFLARE_ACCOUNT_ID`、`D1_DATABASE_ID`、`SYNC_API_URL` 环境变量，执行 `node scripts/prepare-deploy.mjs`，然后运行 `npx wrangler d1 migrations apply tongcraft-schematics --remote --config .wrangler/deploy.json` 和 `npx wrangler deploy --config .wrangler/deploy.json`。
 5. 检查 `https://library.weiuou.top/api/health`、网页浏览、模组登录、上传与下载。
 
-如果 Sync 服务还没有公网 HTTPS 地址，可以临时设置 `ALLOW_PUBLIC_PREVIEW=true`、不设置 `SYNC_API_URL` 后生成部署配置。站点会公开显示浏览页，但登录和上传按钮暂不开放；接入 Sync 后重新部署即可启用。GitHub 自动部署也可通过仓库变量 `ALLOW_PUBLIC_PREVIEW=true` 发布只读预览；正式开放上传时设置 `SYNC_API_URL` 并把该变量改为 `false`。
+如果 Sync 服务还没有公网 HTTPS 地址，可以临时设置 `ALLOW_PUBLIC_PREVIEW=true`、不设置 `SYNC_API_URL` 后生成部署配置。站点会公开显示浏览页，但登录和上传按钮暂不开放；接入 Sync 后重新部署即可启用。GitHub 自动部署也可通过仓库变量 `ALLOW_PUBLIC_PREVIEW=true` 发布只读预览；正式开放上传时设置 `SYNC_API_URL` 并把该变量改为 `false`。修改部署变量后可在 Actions 中手动运行 CI 工作流，或推送新提交，重新发布配置。
 
 Cloudflare Worker 的 Custom Domain 会为 `library.weiuou.top` 创建相应 DNS 记录和证书；该名称不能已有冲突的 CNAME。生产配置文件在 `.wrangler/` 下生成，不提交账号和数据库标识。([Custom Domains 文档](https://developers.cloudflare.com/workers/configuration/routing/custom-domains/))
 
