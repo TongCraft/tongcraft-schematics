@@ -23,6 +23,12 @@ jobs:
           cache: npm
       - run: npm ci --ignore-scripts
       - run: npm run check
+      - name: Check generated deployment configuration
+        run: node scripts/prepare-deploy.mjs && npx wrangler deploy --dry-run --config .wrangler/deploy.json
+        env:
+          CLOUDFLARE_ACCOUNT_ID: "00000000000000000000000000000000"
+          D1_DATABASE_ID: "00000000-0000-0000-0000-000000000001"
+          SYNC_API_URL: https://sync.example.com
       - run: npm audit --audit-level=high
 
   deploy:

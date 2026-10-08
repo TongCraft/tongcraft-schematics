@@ -6,7 +6,10 @@ if (!/^[0-9a-f-]{36}$/i.test(D1_DATABASE_ID || ""))
 if (!CLOUDFLARE_ACCOUNT_ID) throw new Error("Set CLOUDFLARE_ACCOUNT_ID");
 const sync = new URL(SYNC_API_URL || "");
 if (sync.protocol !== "https:") throw new Error("SYNC_API_URL must be HTTPS");
-const config = JSON.parse(await readFile("wrangler.jsonc", "utf8"));
+const config = JSON.parse(await readFile("wrangler.json", "utf8"));
+config.main = "../src/index.ts";
+config.assets.directory = "../web";
+config.d1_databases[0].migrations_dir = "../migrations";
 config.d1_databases[0].database_id = D1_DATABASE_ID;
 config.vars = { SYNC_API_URL: sync.origin };
 await mkdir(".wrangler", { recursive: true });
