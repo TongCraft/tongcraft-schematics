@@ -51,13 +51,13 @@ npm audit --audit-level=high
 4. 设置 `CLOUDFLARE_ACCOUNT_ID`、`D1_DATABASE_ID`、`SYNC_API_URL` 环境变量，执行 `node scripts/prepare-deploy.mjs`，然后运行 `npx wrangler d1 migrations apply tongcraft-schematics --remote --config .wrangler/deploy.json` 和 `npx wrangler deploy --config .wrangler/deploy.json`。
 5. 检查 `https://library.weiuou.top/api/health`、网页浏览、模组登录、上传与下载。
 
-如果 Sync 服务还没有公网 HTTPS 地址，可以临时设置 `ALLOW_PUBLIC_PREVIEW=true`、不设置 `SYNC_API_URL` 后生成部署配置。站点会公开显示浏览页，但登录和上传按钮暂不开放；接入 Sync 后重新部署即可启用。GitHub 自动部署仍要求有效的 `SYNC_API_URL`。
+如果 Sync 服务还没有公网 HTTPS 地址，可以临时设置 `ALLOW_PUBLIC_PREVIEW=true`、不设置 `SYNC_API_URL` 后生成部署配置。站点会公开显示浏览页，但登录和上传按钮暂不开放；接入 Sync 后重新部署即可启用。GitHub 自动部署也可通过仓库变量 `ALLOW_PUBLIC_PREVIEW=true` 发布只读预览；正式开放上传时设置 `SYNC_API_URL` 并把该变量改为 `false`。
 
 Cloudflare Worker 的 Custom Domain 会为 `library.weiuou.top` 创建相应 DNS 记录和证书；该名称不能已有冲突的 CNAME。生产配置文件在 `.wrangler/` 下生成，不提交账号和数据库标识。([Custom Domains 文档](https://developers.cloudflare.com/workers/configuration/routing/custom-domains/))
 
 ### GitHub CI/CD
 
-每次提交和 PR 运行类型检查、蓝图校验测试、Wrangler 打包检查和依赖审计。设置仓库变量 `DEPLOY_ENABLED=true`、`CLOUDFLARE_ACCOUNT_ID`、`D1_DATABASE_ID`、`SYNC_API_URL`，并设置仓库密钥 `CLOUDFLARE_API_TOKEN` 后，`main` 分支通过检查就会自动迁移 D1 并部署 Worker。请使用仅具备这些资源所需权限的 Cloudflare API Token。
+每次提交和 PR 运行类型检查、蓝图校验测试、Wrangler 打包检查和依赖审计。设置仓库变量 `DEPLOY_ENABLED=true`、`CLOUDFLARE_ACCOUNT_ID`、`D1_DATABASE_ID`，再设置 `SYNC_API_URL`（完整站点）或 `ALLOW_PUBLIC_PREVIEW=true`（只读预览），并设置仓库密钥 `CLOUDFLARE_API_TOKEN` 后，`main` 分支通过检查就会自动迁移 D1 并部署 Worker。请使用仅具备这些资源所需权限的 Cloudflare API Token。
 
 ### 中国大陆访问
 

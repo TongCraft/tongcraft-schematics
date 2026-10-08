@@ -57,6 +57,7 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           D1_DATABASE_ID: ${{ vars.D1_DATABASE_ID }}
           SYNC_API_URL: ${{ vars.SYNC_API_URL }}
+          ALLOW_PUBLIC_PREVIEW: ${{ vars.ALLOW_PUBLIC_PREVIEW }}
       - name: Apply database migrations
         run: npx wrangler d1 migrations apply tongcraft-schematics --remote --config .wrangler/deploy.json
         env:
