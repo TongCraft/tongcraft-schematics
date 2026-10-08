@@ -13,7 +13,7 @@
 
 ## 如何使用
 
-- **浏览与下载：** 打开[素材库](https://library.weiuou.top)，或在 Sync 模组内查看并下载。
+- **浏览与下载：** 打开[素材库](https://library.weiuou.top)，查看结构预览、下载原文件和材料清单；也可以在 Sync 模组内浏览并下载。
 - **上传：** 在游戏内连接同步地址 `https://sync.weiuou.top`，通过邀请加入后从模组领取网页登录链接。单个文件最多 16 MiB，每位成员每 24 小时最多上传 20 份。
 
 网页和 API 运行在 Cloudflare Workers，目录存于 D1，投影文件存于 R2；GitHub 只保存代码并负责自动部署。

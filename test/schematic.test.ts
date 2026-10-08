@@ -29,14 +29,19 @@ const position = (name: string, value: number) =>
     compound(["x", "y", "z"].map((axis) => tag(3, axis, int(value)))),
   );
 
-function fixture({ version = 7, stateLength = 1, size = 1 } = {}): Buffer {
+function fixture({
+  version = 7,
+  stateLength = 1,
+  size = 1,
+  state = 0,
+} = {}): Buffer {
   const region = compound([
     position("Position", 0),
     position("Size", size),
     tag(
       12,
       "BlockStates",
-      Buffer.concat([int(stateLength), Buffer.alloc(stateLength * 8)]),
+      Buffer.concat([int(stateLength), Buffer.alloc(stateLength * 8, state)]),
     ),
     tag(
       9,
@@ -62,11 +67,13 @@ function fixture({ version = 7, stateLength = 1, size = 1 } = {}): Buffer {
 }
 
 test("accepts a valid bounded Litematica file and extracts geometry", () => {
-  assert.deepEqual(validateLitematic(fixture()), {
-    version: 7,
-    volume: 1,
-    regions: ["Main"],
-  });
+  const result = validateLitematic(fixture({ state: 1 }));
+  assert.equal(result.version, 7);
+  assert.equal(result.volume, 1);
+  assert.equal(result.solidBlocks, 1);
+  assert.deepEqual(result.regions, ["Main"]);
+  assert.deepEqual(result.materials, [{ id: "minecraft:stone", count: 1 }]);
+  assert.match(result.previewSvg, /^<svg/);
 });
 
 test("rejects malformed and unsupported schematics", () => {

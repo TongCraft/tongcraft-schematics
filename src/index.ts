@@ -24,6 +24,8 @@ interface ItemRow {
   block_count: number;
   region_count: number;
   created_at: number;
+  materials?: string | null;
+  has_preview?: number;
 }
 
 class ApiError extends Error {
@@ -156,7 +158,7 @@ function tags(value: unknown): string[] {
   return result;
 }
 
-function item(row: ItemRow) {
+function item(row: ItemRow, includeMaterials = false) {
   return {
     id: row.id,
     owner: { uuid: row.owner_uuid, name: row.owner_name },
@@ -169,6 +171,15 @@ function item(row: ItemRow) {
     regions: row.region_count,
     createdAt: row.created_at,
     downloadUrl: `/api/items/${row.id}/file`,
+    previewUrl: row.has_preview ? `/api/items/${row.id}/preview` : null,
+    ...(includeMaterials
+      ? {
+          materials: JSON.parse(row.materials ?? "[]") as {
+            id: string;
+            count: number;
+          }[],
+        }
+      : {}),
   };
 }
 
@@ -301,12 +312,12 @@ async function listItems(url: URL, env: Env): Promise<Response> {
     .bind(...values)
     .first<{ n: number }>();
   const rows = await env.DB.prepare(
-    `SELECT * FROM items WHERE ${where} ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?`,
+    `SELECT id,owner_uuid,owner_name,title,description,tags,hash,file_size,block_count,region_count,created_at,preview_svg IS NOT NULL AS has_preview FROM items WHERE ${where} ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?`,
   )
     .bind(...values, limit, (page - 1) * limit)
     .all<ItemRow>();
   return json({
-    items: rows.results.map(item),
+    items: rows.results.map((row) => item(row)),
     page,
     pageSize: limit,
     total: total?.n ?? 0,
@@ -315,7 +326,7 @@ async function listItems(url: URL, env: Env): Promise<Response> {
 
 async function getItem(id: string, env: Env): Promise<ItemRow> {
   const row = await env.DB.prepare(
-    "SELECT * FROM items WHERE id=? AND deleted_at IS NULL",
+    "SELECT id,owner_uuid,owner_name,title,description,tags,hash,file_size,block_count,region_count,created_at,materials,preview_svg IS NOT NULL AS has_preview FROM items WHERE id=? AND deleted_at IS NULL",
   )
     .bind(id)
     .first<ItemRow>();
@@ -380,7 +391,7 @@ async function upload(request: Request, env: Env): Promise<Response> {
       customMetadata: { sha256: hash },
     });
     await env.DB.prepare(
-      "INSERT INTO items(id,owner_uuid,owner_name,title,description,tags,hash,file_size,block_count,region_count,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+      "INSERT INTO items(id,owner_uuid,owner_name,title,description,tags,hash,file_size,block_count,region_count,created_at,materials,preview_svg) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
     )
       .bind(
         id,
@@ -391,9 +402,11 @@ async function upload(request: Request, env: Env): Promise<Response> {
         JSON.stringify(itemTags),
         hash,
         bytes.byteLength,
-        metadata.volume,
+        metadata.solidBlocks,
         metadata.regions.length,
         Date.now(),
+        JSON.stringify(metadata.materials),
+        metadata.previewSvg,
       )
       .run();
   } catch (error) {
@@ -453,6 +466,23 @@ async function downloadItem(row: ItemRow, env: Env): Promise<Response> {
   });
 }
 
+async function previewItem(id: string, env: Env): Promise<Response> {
+  const row = await env.DB.prepare(
+    "SELECT preview_svg FROM items WHERE id=? AND deleted_at IS NULL",
+  )
+    .bind(id)
+    .first<{ preview_svg: string | null }>();
+  if (!row?.preview_svg) throw new ApiError(404, "预览图暂不可用");
+  return new Response(row.preview_svg, {
+    headers: {
+      "Content-Type": "image/svg+xml; charset=utf-8",
+      "Cache-Control": "public, max-age=3600",
+      "X-Content-Type-Options": "nosniff",
+      "Content-Security-Policy": "default-src 'none'; sandbox",
+    },
+  });
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
@@ -485,13 +515,17 @@ export default {
         return await listItems(url, env);
       if (path === "/api/items" && request.method === "POST")
         return await upload(request, env);
-      const match = path.match(/^\/api\/items\/([a-f0-9-]{36})(?:\/(file))?$/);
+      const match = path.match(
+        /^\/api\/items\/([a-f0-9-]{36})(?:\/(file|preview))?$/,
+      );
       if (match) {
+        if (match[2] === "preview" && request.method === "GET")
+          return await previewItem(match[1], env);
         const row = await getItem(match[1], env);
         if (match[2] === "file" && request.method === "GET")
           return await downloadItem(row, env);
         if (!match[2] && request.method === "GET")
-          return json({ item: item(row) });
+          return json({ item: item(row, true) });
         if (!match[2] && request.method === "DELETE")
           return await removeItem(request, row.id, env);
       }

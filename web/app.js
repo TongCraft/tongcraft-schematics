@@ -64,37 +64,41 @@ function setMember(member) {
   $("#uploadButton").hidden = !member;
 }
 
-function card(entry, index) {
+function card(entry) {
   const article = element("article", "item-card");
-  const art = element("div", "card-art");
-  art.append(
-    element("span", "card-index", `TC / ${String(index + 1).padStart(3, "0")}`),
-  );
+  const art = element("button", "card-preview");
+  art.type = "button";
+  art.setAttribute("aria-label", `查看 ${entry.title} 的详情`);
+  art.addEventListener("click", () => openDetail(entry.id));
+  if (entry.previewUrl) {
+    const image = element("img");
+    image.src = entry.previewUrl;
+    image.alt = `${entry.title} 的结构预览`;
+    image.loading = "lazy";
+    art.append(image);
+  } else {
+    art.append(element("span", "preview-missing", "暂无预览"));
+  }
   const body = element("div", "card-body");
   body.append(element("h3", "card-title", entry.title));
   body.append(
-    element(
-      "p",
-      "card-description",
-      entry.description || "一份等待你带进世界的建筑蓝图。",
-    ),
+    element("p", "card-description", entry.description || "暂无简介"),
   );
-  const tags = element("div", "card-tags");
-  for (const tag of entry.tags) tags.append(element("span", "card-tag", tag));
-  body.append(tags);
   const meta = element("div", "card-meta");
   meta.append(
-    element("span", "", `by ${entry.owner.name}`),
+    element("span", "", entry.owner.name),
     element("span", "", `${entry.blocks.toLocaleString("zh-CN")} 方块`),
+    element("span", "", size(entry.size)),
   );
   body.append(meta);
-  const actions = element("div", "card-action");
-  const detail = element("button", "", "查看详情 ↗");
+  const actions = element("div", "card-actions");
+  const detail = element("button", "", "查看详情");
   detail.type = "button";
   detail.addEventListener("click", () => openDetail(entry.id));
-  actions.append(detail, element("span", "", size(entry.size)));
-  body.append(actions);
-  article.append(art, body);
+  const download = element("a", "", "下载投影");
+  download.href = entry.downloadUrl;
+  actions.append(detail, download);
+  article.append(art, body, actions);
   return article;
 }
 
@@ -109,9 +113,7 @@ async function loadItems() {
     const data = await api(`/api/items?${params}`);
     state.total = data.total;
     grid.replaceChildren();
-    data.items.forEach((entry, index) =>
-      grid.append(card(entry, (state.page - 1) * data.pageSize + index)),
-    );
+    data.items.forEach((entry) => grid.append(card(entry)));
     if (data.items.length === 0) {
       const empty = element("div", "empty-state");
       empty.append(
@@ -155,8 +157,34 @@ async function openDetail(id) {
     const { item: entry } = await api(`/api/items/${id}`);
     const content = $("#detailContent");
     content.replaceChildren();
-    content.append(element("h2", "", entry.title));
-    content.append(element("p", "", entry.description || "作者尚未填写简介。"));
+    const layout = element("div", "detail-layout");
+    const previewArea = element("div");
+    if (entry.previewUrl) {
+      const preview = element("img", "detail-preview");
+      preview.src = entry.previewUrl;
+      preview.alt = `${entry.title} 的结构预览`;
+      previewArea.append(preview);
+    } else {
+      previewArea.append(
+        element("div", "detail-preview preview-missing", "暂无预览"),
+      );
+    }
+    previewArea.append(
+      element(
+        "p",
+        "detail-preview-note",
+        "结构示意图，方块使用近似颜色；请以原文件为准。",
+      ),
+    );
+    const info = element("div");
+    info.append(element("h3", "detail-title", entry.title));
+    info.append(
+      element(
+        "p",
+        "detail-description",
+        entry.description || "作者尚未填写简介。",
+      ),
+    );
     const meta = element("div", "detail-meta");
     for (const label of [
       `作者 ${entry.owner.name}`,
@@ -166,16 +194,16 @@ async function openDetail(id) {
       date(entry.createdAt),
     ])
       meta.append(element("span", "", label));
-    content.append(meta);
+    info.append(meta);
     const tags = element("div", "card-tags");
     for (const tag of entry.tags) tags.append(element("span", "card-tag", tag));
-    content.append(tags);
-    content.append(element("p", "detail-hash", `SHA-256  ${entry.sha256}`));
+    info.append(tags);
+    info.append(element("p", "detail-hash", `SHA-256  ${entry.sha256}`));
     const actions = element("div", "detail-actions");
-    const download = element("a", "button button-accent", "下载 .litematic ↓");
+    const download = element("a", "button button-primary", "下载 .litematic");
     download.href = entry.downloadUrl;
     actions.append(download);
-    const share = element("button", "button button-outline", "复制链接");
+    const share = element("button", "button", "复制链接");
     share.type = "button";
     share.addEventListener("click", async () => {
       await navigator.clipboard.writeText(
@@ -203,11 +231,79 @@ async function openDetail(id) {
       });
       actions.append(remove);
     }
-    content.append(actions);
+    info.append(actions);
+    layout.append(previewArea, info);
+    content.append(layout);
+
+    const materials = Array.isArray(entry.materials) ? entry.materials : [];
+    const materialHead = element("div", "materials-head");
+    materialHead.append(element("h3", "", `材料清单 · ${materials.length} 种`));
+    if (materials.length) {
+      const csv = element("button", "button", "下载 CSV");
+      csv.type = "button";
+      csv.addEventListener("click", () => downloadMaterials(entry));
+      materialHead.append(csv);
+    }
+    content.append(materialHead);
+    content.append(
+      element(
+        "p",
+        "materials-note",
+        "按文件中的方块 ID 统计；双格方块、容器与配方请在游戏内确认。",
+      ),
+    );
+    if (materials.length) {
+      const wrap = element("div", "materials-table-wrap");
+      const table = element("table", "materials-table");
+      const head = element("thead");
+      const headRow = element("tr");
+      for (const label of ["方块 ID", "数量", "64 个/组"])
+        headRow.append(element("th", "", label));
+      head.append(headRow);
+      table.append(head);
+      const body = element("tbody");
+      for (const material of materials) {
+        const row = element("tr");
+        const idCell = element("td");
+        idCell.append(element("code", "", material.id));
+        row.append(
+          idCell,
+          element("td", "", material.count.toLocaleString("zh-CN")),
+          element(
+            "td",
+            "",
+            `${Math.floor(material.count / 64)} 组 ${material.count % 64} 个`,
+          ),
+        );
+        body.append(row);
+      }
+      table.append(body);
+      wrap.append(table);
+      content.append(wrap);
+    } else {
+      content.append(element("p", "subtle", "暂无材料数据。"));
+    }
     show($("#detailDialog"));
   } catch (error) {
     toast(error.message);
   }
+}
+
+function downloadMaterials(entry) {
+  const rows = ["方块 ID,数量,组数(64),余数"];
+  for (const { id, count } of entry.materials)
+    rows.push(`${id},${count},${Math.floor(count / 64)},${count % 64}`);
+  const blob = new Blob(["\ufeff", rows.join("\r\n"), "\r\n"], {
+    type: "text/csv;charset=utf-8",
+  });
+  const url = URL.createObjectURL(blob);
+  const link = element("a");
+  link.href = url;
+  link.download = `${entry.title.replace(/[\\/:*?"<>|]/g, "_")}-材料清单.csv`;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 async function upload(event) {
@@ -249,9 +345,7 @@ async function start() {
     // The catalog request below will report a service error if needed.
   }
   if (!state.loginAvailable) {
-    const share = $("#heroUploadButton");
-    share.disabled = true;
-    share.textContent = "上传即将开放";
+    $("#loginButton").hidden = true;
   }
   document
     .querySelectorAll("[data-close]")
@@ -269,9 +363,6 @@ async function start() {
     }
   });
   $("#uploadButton").addEventListener("click", () => show($("#uploadDialog")));
-  $("#heroUploadButton").addEventListener("click", () =>
-    show($(state.member ? "#uploadDialog" : "#loginDialog")),
-  );
   $("#uploadForm").addEventListener("submit", upload);
   $("#searchInput").addEventListener("input", (event) => {
     clearTimeout(searchTimer);

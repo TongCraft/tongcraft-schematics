@@ -1,4 +1,5 @@
 import { gunzipSync } from "node:zlib";
+import { makePreviewSvg, type PreviewColumn } from "./preview";
 
 export const MAX_FILE_BYTES = 16 * 1024 * 1024;
 const MAX_NBT_BYTES = 64 * 1024 * 1024;
@@ -14,6 +15,9 @@ export function validateLitematic(compressed: Uint8Array): {
   volume: number;
   regions: string[];
   version: number;
+  solidBlocks: number;
+  materials: { id: string; count: number }[];
+  previewSvg: string;
 } {
   requireValid(
     compressed.byteLength > 0 && compressed.byteLength <= MAX_FILE_BYTES,
@@ -48,7 +52,7 @@ export function validateLitematic(compressed: Uint8Array): {
     const start = take(length);
     return decoder.decode(data.subarray(start, start + length));
   };
-  const payload = (type: number, depth: number): unknown => {
+  const payload = (type: number, depth: number, keepList = false): unknown => {
     requireValid(depth <= 32 && ++nodes <= 2_000_000, "蓝图 NBT 结构过于复杂");
     switch (type) {
       case 1:
@@ -71,8 +75,10 @@ export function validateLitematic(compressed: Uint8Array): {
       case 12: {
         const length = int();
         requireValid(length >= 0, "蓝图 NBT 数组长度无效");
-        take(length * ({ 7: 1, 11: 4, 12: 8 } as Record<number, number>)[type]);
-        return { type, length };
+        const start = take(
+          length * ({ 7: 1, 11: 4, 12: 8 } as Record<number, number>)[type],
+        );
+        return { type, length, start };
       }
       case 8:
         return string();
@@ -85,15 +91,24 @@ export function validateLitematic(compressed: Uint8Array): {
             (listType !== 0 || length === 0),
           "蓝图 NBT 列表长度无效",
         );
-        for (let i = 0; i < length; i++) payload(listType, depth + 1);
-        return { listType, length };
+        const values: unknown[] | undefined = keepList ? [] : undefined;
+        for (let i = 0; i < length; i++) {
+          const value = payload(listType, depth + 1);
+          if (values) values.push(value);
+        }
+        return { listType, length, values };
       }
       case 10: {
         const result: Record<string, unknown> = Object.create(null);
         for (;;) {
           const childType = byte();
           if (childType === 0) break;
-          result[string()] = payload(childType, depth + 1);
+          const name = string();
+          result[name] = payload(
+            childType,
+            depth + 1,
+            name === "BlockStatePalette",
+          );
         }
         return result;
       }
@@ -124,6 +139,14 @@ export function validateLitematic(compressed: Uint8Array): {
     "蓝图区域数量无效",
   );
   let volume = 0;
+  const regions: {
+    position: number[];
+    dimensions: number[];
+    states: { length: number; start: number };
+    palette: string[];
+  }[] = [];
+  const minimum = [Infinity, Infinity, Infinity];
+  const maximum = [-Infinity, -Infinity, -Infinity];
   for (const [name, rawRegion] of entries) {
     requireValid(name.length > 0 && name.length <= 256, "蓝图区域名称无效");
     const region = rawRegion as Record<string, unknown>;
@@ -131,11 +154,16 @@ export function validateLitematic(compressed: Uint8Array): {
     const size = region.Size as Record<string, unknown> | undefined;
     const position = region.Position as Record<string, unknown> | undefined;
     const states = region.BlockStates as
-      { type?: number; length?: number } | undefined;
+      { type?: number; length?: number; start?: number } | undefined;
     const palette = region.BlockStatePalette as
-      { listType?: number; length?: number } | undefined;
+      { listType?: number; length?: number; values?: unknown[] } | undefined;
     requireValid(
-      size && position && states?.type === 12 && palette?.listType === 10,
+      size &&
+        position &&
+        states?.type === 12 &&
+        typeof states.start === "number" &&
+        palette?.listType === 10 &&
+        Array.isArray(palette.values),
       "蓝图区域缺少方块数据",
     );
     requireValid(
@@ -173,10 +201,107 @@ export function validateLitematic(compressed: Uint8Array): {
       states.length === Math.ceil((blocks * bits) / 64),
       "蓝图方块数组长度无效",
     );
+    const names = palette.values.map(
+      (value) => (value as Record<string, unknown>)?.Name,
+    );
+    requireValid(
+      names.every(
+        (value) =>
+          typeof value === "string" &&
+          /^[a-z0-9_.-]+:[a-z0-9_./-]+$/.test(value),
+      ),
+      "蓝图包含无效的方块名称",
+    );
+    const coordinates = ["x", "y", "z"].map((axis) => position[axis] as number);
+    for (let axis = 0; axis < 3; axis++) {
+      minimum[axis] = Math.min(
+        minimum[axis],
+        coordinates[axis],
+        coordinates[axis] +
+          (dimensions[axis] as number) -
+          Math.sign(dimensions[axis] as number),
+      );
+      maximum[axis] = Math.max(
+        maximum[axis],
+        coordinates[axis],
+        coordinates[axis] +
+          (dimensions[axis] as number) -
+          Math.sign(dimensions[axis] as number),
+      );
+    }
+    regions.push({
+      position: coordinates,
+      dimensions: dimensions as number[],
+      states: states as { length: number; start: number },
+      palette: names as string[],
+    });
+  }
+  const counts = new Map<string, number>();
+  let solidBlocks = 0;
+  const columns = new Map<number, PreviewColumn>();
+  const gridSize = 24;
+  for (const region of regions) {
+    const [dx, dy, dz] = region.dimensions.map(Math.abs);
+    const signs = region.dimensions.map(Math.sign);
+    const bits = Math.max(2, Math.ceil(Math.log2(region.palette.length)));
+    const mask = (1n << BigInt(bits)) - 1n;
+    let cachedIndex = -1;
+    let cachedWord = 0n;
+    for (let index = 0; index < dx * dy * dz; index++) {
+      const bit = index * bits;
+      const wordIndex = Math.floor(bit / 64);
+      const shift = bit % 64;
+      if (wordIndex !== cachedIndex) {
+        cachedWord = view.getBigUint64(region.states.start + wordIndex * 8);
+        cachedIndex = wordIndex;
+      }
+      let value = cachedWord >> BigInt(shift);
+      if (shift + bits > 64) {
+        value |=
+          view.getBigUint64(region.states.start + (wordIndex + 1) * 8) <<
+          BigInt(64 - shift);
+      }
+      const name = region.palette[Number(value & mask)];
+      requireValid(name, "蓝图方块索引超出调色板");
+      if (
+        name === "minecraft:air" ||
+        name === "minecraft:cave_air" ||
+        name === "minecraft:void_air"
+      )
+        continue;
+      solidBlocks++;
+      counts.set(name, (counts.get(name) ?? 0) + 1);
+      const x = index % dx;
+      const z = Math.floor(index / dx) % dz;
+      const y = Math.floor(index / (dx * dz));
+      const worldX = region.position[0] + x * signs[0];
+      const worldY = region.position[1] + y * signs[1];
+      const worldZ = region.position[2] + z * signs[2];
+      const px = Math.min(
+        gridSize - 1,
+        Math.floor(
+          ((worldX - minimum[0]) * gridSize) / (maximum[0] - minimum[0] + 1),
+        ),
+      );
+      const pz = Math.min(
+        gridSize - 1,
+        Math.floor(
+          ((worldZ - minimum[2]) * gridSize) / (maximum[2] - minimum[2] + 1),
+        ),
+      );
+      const key = px + pz * gridSize;
+      if (!columns.has(key) || columns.get(key)!.height < worldY)
+        columns.set(key, { x: px, z: pz, height: worldY, id: name });
+    }
   }
   return {
     volume,
     regions: entries.map(([name]) => name),
     version: version as number,
+    solidBlocks,
+    materials: [...counts]
+      .map(([id, count]) => ({ id, count }))
+      .sort((a, b) => b.count - a.count || a.id.localeCompare(b.id)),
+    previewSvg: makePreviewSvg([...columns.values()], minimum[1], maximum[1]),
   };
 }

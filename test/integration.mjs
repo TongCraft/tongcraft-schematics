@@ -52,7 +52,11 @@ function fixture() {
   const region = compound(
     vector("Size", 1),
     vector("Position", 0),
-    tag(12, "BlockStates", Buffer.concat([int(1), Buffer.alloc(8)])),
+    tag(
+      12,
+      "BlockStates",
+      Buffer.concat([int(1), Buffer.from([0, 0, 0, 0, 0, 0, 0, 1])]),
+    ),
     tag(9, "BlockStatePalette", palette),
   );
   return gzipSync(
@@ -238,6 +242,20 @@ test(
     ).json();
     assert.equal(listed.total, 1);
     assert.equal(listed.items[0].id, id);
+    assert.equal(listed.items[0].blocks, 1);
+    assert.equal(listed.items[0].previewUrl, `/api/items/${id}/preview`);
+    const detail = await (
+      await checked(await fetch(`${base}/api/items/${id}`), 200)
+    ).json();
+    assert.deepEqual(detail.item.materials, [
+      { id: "minecraft:stone", count: 1 },
+    ]);
+    const preview = await checked(
+      await fetch(`${base}/api/items/${id}/preview`),
+      200,
+    );
+    assert.match(preview.headers.get("content-type"), /image\/svg\+xml/);
+    assert.match(await preview.text(), /<svg/);
     const download = await checked(
       await fetch(`${base}/api/items/${id}/file`),
       200,

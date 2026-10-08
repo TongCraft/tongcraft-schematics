@@ -3,127 +3,61 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#0b1621" />
+    <meta name="theme-color" content="#f7f7f5" />
     <meta
       name="description"
-      content="TongCraft 投影素材库：浏览、分享并下载经过校验的 Litematica 蓝图。"
+      content="浏览、预览并下载 TongCraft 玩家分享的 Litematica 投影。"
     />
-    <title>TongCraft · 投影素材库</title>
+    <title>TongCraft 投影素材库 · 测试中</title>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="/style.css" />
     <script type="module" src="/app.js"></script>
   </head>
   <body>
-    <div class="ambient ambient-one" aria-hidden="true"></div>
-    <div class="ambient ambient-two" aria-hidden="true"></div>
-    <header class="site-header wrap">
-      <a class="brand" href="/" aria-label="TongCraft 投影素材库首页">
-        <span class="brand-mark" aria-hidden="true"
-          ><span></span><span></span><span></span
-        ></span>
-        <span>TONGCRAFT <small>LIBRARY</small></span>
-      </a>
-      <nav aria-label="主导航">
-        <a href="#catalog">探索素材</a>
-        <a
-          href="https://github.com/TongCraft/tongcraft-sync"
-          target="_blank"
-          rel="noopener noreferrer"
-          >共享模组</a
-        >
-        <a
-          href="https://github.com/TongCraft/tongcraft-schematics"
-          target="_blank"
-          rel="noopener noreferrer"
-          >GitHub</a
-        >
-      </nav>
-      <div class="header-actions">
-        <span id="memberLabel" class="member-label" hidden></span>
-        <button id="loginButton" class="button button-ghost" type="button">
-          玩家登录
-        </button>
-        <button
-          id="uploadButton"
-          class="button button-accent"
-          type="button"
-          hidden
-        >
-          上传蓝图 <span aria-hidden="true">↗</span>
-        </button>
-      </div>
-    </header>
-
-    <main>
-      <section class="hero wrap" aria-labelledby="heroTitle">
-        <div class="hero-copy">
-          <div class="eyebrow">
-            <span class="signal"></span> TONGCRAFT COMMUNITY ARCHIVE
-            <span class="eyebrow-index">/ 01</span>
-          </div>
-          <h1 id="heroTitle">每一份构想，<br /><em>都值得被建造。</em></h1>
-          <p>
-            寻找下一座建筑的灵感。上传并分享你的 Litematica
-            蓝图，在网页下载，或直接从 TongCraft Sync 模组里浏览。
-          </p>
-          <div class="hero-actions">
-            <a class="button button-accent button-large" href="#catalog"
-              >探索素材库 <span aria-hidden="true">↗</span></a
+    <div class="wrap">
+      <header class="site-header">
+        <div>
+          <h1>TongCraft 投影素材库 <span class="beta">测试中</span></h1>
+          <p>浏览、预览和下载玩家分享的 .litematic 投影。</p>
+          <nav aria-label="相关站点">
+            <a href="https://tongcraft.github.io/TongCraft-cdn/">玩家头像</a>
+            <a href="https://github.com/TongCraft/tongcraft-sync">共享模组</a>
+            <a href="https://github.com/TongCraft/tongcraft-schematics"
+              >GitHub</a
             >
-            <button
-              id="heroUploadButton"
-              class="button button-outline button-large"
-              type="button"
-            >
-              分享我的蓝图
-            </button>
-          </div>
-          <div class="hero-foot">
-            <span>FORMAT <strong>.LITEMATIC</strong></span
-            ><span>ACCESS <strong>OPEN DOWNLOAD</strong></span
-            ><span>UPLOAD <strong>TONGCRAFT MEMBERS</strong></span>
-          </div>
+          </nav>
         </div>
-        <div class="hero-art" aria-hidden="true">
-          <div class="grid-plane"></div>
-          <div class="voxel voxel-back"></div>
-          <div class="voxel voxel-mid"></div>
-          <div class="voxel voxel-front"></div>
-          <div class="art-coordinate">X: 128<br />Y: 64<br />Z: -256</div>
-          <div class="art-caption">
-            <span class="caption-dot"></span> BLUEPRINT / READY TO BUILD
-          </div>
+        <div class="header-actions">
+          <span id="memberLabel" class="member-label" hidden></span>
+          <button id="loginButton" class="button" type="button">
+            玩家登录
+          </button>
+          <button
+            id="uploadButton"
+            class="button button-primary"
+            type="button"
+            hidden
+          >
+            上传投影
+          </button>
         </div>
-      </section>
+      </header>
 
-      <section
-        class="catalog-section"
-        id="catalog"
-        aria-labelledby="catalogTitle"
-      >
-        <div class="wrap">
-          <div class="section-topline">
-            <span>THE ARCHIVE</span><span>02 / DISCOVER</span>
-          </div>
-          <div class="catalog-heading">
-            <div>
-              <h2 id="catalogTitle">探索投影</h2>
-              <p>由社区建造者分享，可直接下载使用。</p>
-            </div>
-            <div id="catalogCount" class="count-pill">正在载入…</div>
-          </div>
-          <div class="catalog-controls">
-            <label class="search-box"
-              ><span aria-hidden="true">⌕</span
-              ><input
-                id="searchInput"
-                type="search"
-                placeholder="搜索名称、介绍或作者"
-                maxlength="80"
-                autocomplete="off"
-              /><kbd>/</kbd></label
-            >
-            <div class="filter-strip" role="group" aria-label="按标签筛选">
+      <main id="catalog">
+        <div class="catalog-toolbar">
+          <label class="search-control">
+            搜索
+            <input
+              id="searchInput"
+              type="search"
+              placeholder="名称、介绍或作者"
+              maxlength="80"
+              autocomplete="off"
+            />
+          </label>
+          <div class="filter-control">
+            <span>分类</span>
+            <div class="filters" role="group" aria-label="按标签筛选">
               <button class="filter active" type="button" data-tag="">
                 全部
               </button>
@@ -133,149 +67,106 @@
               <button class="filter" type="button" data-tag="农场">农场</button>
             </div>
           </div>
-          <div id="catalogStatus" class="catalog-status" role="status"></div>
-          <div id="itemGrid" class="item-grid" aria-live="polite"></div>
-          <div class="pagination">
-            <button
-              id="prevPage"
-              class="button button-ghost"
-              type="button"
-              disabled
-            >
-              ← 上一页</button
-            ><span id="pageLabel">—</span
-            ><button
-              id="nextPage"
-              class="button button-ghost"
-              type="button"
-              disabled
-            >
-              下一页 →
-            </button>
-          </div>
+          <span id="catalogCount" class="catalog-count">正在载入…</span>
         </div>
-      </section>
+        <div id="catalogStatus" class="catalog-status" role="status"></div>
+        <div id="itemGrid" class="item-grid" aria-live="polite"></div>
+        <div class="pagination">
+          <button id="prevPage" class="button" type="button" disabled>
+            上一页
+          </button>
+          <span id="pageLabel">—</span>
+          <button id="nextPage" class="button" type="button" disabled>
+            下一页
+          </button>
+        </div>
+      </main>
 
-      <section class="how-section wrap" aria-labelledby="howTitle">
-        <div>
-          <span class="overline">FROM FILE TO WORLD</span>
-          <h2 id="howTitle">把灵感带进世界。</h2>
-        </div>
-        <div class="steps">
-          <div>
-            <span>01</span><strong>找到蓝图</strong>
-            <p>搜索素材，查看作者、体量与介绍。</p>
-          </div>
-          <div>
-            <span>02</span><strong>下载文件</strong>
-            <p>获取原始 .litematic，或在模组内下载到本地。</p>
-          </div>
-          <div>
-            <span>03</span><strong>开始建造</strong>
-            <p>使用 Litematica 放置；需要协作时再发布为共享投影。</p>
-          </div>
-        </div>
-      </section>
-    </main>
-
-    <footer class="site-footer">
-      <div class="wrap">
-        <div>
-          <strong>TONGCRAFT / LIBRARY</strong>
-          <p>为每一位建造者保存灵感。</p>
-        </div>
-        <div>
-          <span>开放浏览 · 玩家共建</span
-          ><a
-            href="https://github.com/TongCraft/tongcraft-schematics/issues"
-            target="_blank"
-            rel="noopener noreferrer"
-            >反馈问题 ↗</a
-          >
-        </div>
-      </div>
-    </footer>
+      <footer class="site-footer">
+        <span>由 TongCraft 玩家共享 · 投影版权归原作者</span>
+        <a href="https://github.com/TongCraft/tongcraft-schematics/issues"
+          >反馈问题</a
+        >
+      </footer>
+    </div>
 
     <dialog id="loginDialog" class="modal">
       <div class="modal-head">
-        <span>PLAYER ACCESS / 登录</span
-        ><button class="icon-button" type="button" data-close aria-label="关闭">
+        <h2>玩家登录</h2>
+        <button class="icon-button" type="button" data-close aria-label="关闭">
           ×
         </button>
       </div>
-      <h2>从游戏里安全登录</h2>
       <p>
-        打开 Minecraft，加入已配置的服务器并登录 TongCraft Sync。按
-        <kbd>H</kbd> → <strong>素材库</strong> →
-        <strong>复制网页上传链接</strong>，再把链接粘贴到浏览器。
+        在游戏中登录 TongCraft Sync，按 <kbd>H</kbd> → <strong>素材库</strong> →
+        <strong>复制网页上传链接</strong>，然后在浏览器打开链接。
       </p>
-      <p class="subtle">
-        只有通过 Sync 邀请的成员能上传。网页登录链接只使用一次，五分钟后过期。
-      </p>
-      <button class="button button-accent full" type="button" data-close>
+      <p class="subtle">仅受邀成员可上传。链接仅能使用一次，五分钟后过期。</p>
+      <button class="button button-primary full" type="button" data-close>
         知道了
       </button>
     </dialog>
 
     <dialog id="uploadDialog" class="modal modal-wide">
       <div class="modal-head">
-        <span>CONTRIBUTE / 分享蓝图</span
-        ><button class="icon-button" type="button" data-close aria-label="关闭">
+        <h2>上传投影</h2>
+        <button class="icon-button" type="button" data-close aria-label="关闭">
           ×
         </button>
       </div>
-      <h2>分享一份新素材</h2>
-      <p class="subtle">
-        上传后立即公开。请只分享你有权发布的作品，并填写能帮助其他玩家找到它的信息。
-      </p>
+      <p class="subtle">上传后立即公开。请只分享你有权发布的作品。</p>
       <form id="uploadForm">
         <label
-          >蓝图文件 <span>必填</span
-          ><input
+          >投影文件 <span>必填</span>
+          <input
             id="fileInput"
             name="file"
             type="file"
             accept=".litematic"
             required
-          /><small>仅支持 .litematic，最大 16 MiB。</small></label
-        ><label
-          >名称 <span>必填</span
-          ><input
+          />
+          <small
+            >仅支持 .litematic，最大 16 MiB。预览和材料清单会自动生成。</small
+          >
+        </label>
+        <label
+          >名称 <span>必填</span>
+          <input
             name="title"
             maxlength="80"
             placeholder="例如：山间图书馆"
-            required /></label
-        ><label
-          >简介 <span>选填</span
-          ><textarea
+            required
+          />
+        </label>
+        <label
+          >简介 <span>选填</span>
+          <textarea
             name="description"
             maxlength="1200"
-            rows="4"
-            placeholder="介绍结构、尺寸、用途或建造提示…"
-          ></textarea></label
-        ><label
-          >标签 <span>选填</span
-          ><input
-            name="tags"
-            maxlength="200"
-            placeholder="建筑, 生存, 中世纪"
-          /><small>用逗号分隔，最多 5 个。</small></label
-        >
+            rows="3"
+            placeholder="结构、用途或建造提示"
+          ></textarea>
+        </label>
+        <label
+          >标签 <span>选填</span>
+          <input name="tags" maxlength="200" placeholder="建筑, 生存" />
+          <small>用逗号分隔，最多 5 个。</small>
+        </label>
         <div id="uploadStatus" class="form-status" role="status"></div>
         <button
           id="submitUpload"
-          class="button button-accent full"
+          class="button button-primary full"
           type="submit"
         >
-          发布到素材库 <span aria-hidden="true">↗</span>
+          发布投影
         </button>
       </form>
     </dialog>
 
-    <dialog id="detailDialog" class="modal modal-wide">
+    <dialog id="detailDialog" class="modal modal-detail">
       <div class="modal-head">
-        <span>BLUEPRINT / 素材详情</span
-        ><button class="icon-button" type="button" data-close aria-label="关闭">
+        <h2>投影详情</h2>
+        <button class="icon-button" type="button" data-close aria-label="关闭">
           ×
         </button>
       </div>

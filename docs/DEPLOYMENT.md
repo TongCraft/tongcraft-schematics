@@ -29,6 +29,14 @@ npm run dev
 
 Wrangler 默认在本地模拟 D1 和 R2。公开浏览不需要 Sync 服务；要测试网页登录，可在忽略的 `.dev.vars` 中设置 `SYNC_API_URL=http://127.0.0.1:8787` 并运行带有素材库登录接口的 Sync 服务。
 
+用自己的投影文件检查完整上传、预览和材料清单流程：
+
+```sh
+node scripts/local-preview.mjs "/path/to/example.litematic"
+```
+
+脚本只在 `.wrangler/` 中写入本地测试数据，并打印可在浏览器打开的本地地址。预览图是从投影自动生成的结构示意，采用近似颜色和采样后的俯视轮廓；材料 CSV 按方块 ID 统计，不自动换算合成配方。
+
 ```sh
 npm run check
 npm run test:e2e
