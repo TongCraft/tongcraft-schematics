@@ -651,3 +651,20 @@ a {
     flex-direction: column;
   }
 }
+/* Saved catalogue images do not initialize a WebGL renderer. */
+.saved-card-preview,
+.saved-preview {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+}
+.saved-card-preview {
+  height: 100%;
+}
+.saved-card-preview img,
+.saved-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}

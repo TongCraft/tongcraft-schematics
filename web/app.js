@@ -18,37 +18,33 @@ let rendererModule;
 let detailController;
 let detailViewer;
 let localFileUrl;
-const imageUrls = new Set();
 const getRenderer = () =>
   (rendererModule ??= import("/assets/renderSchematic.js"));
-const previewObserver = new IntersectionObserver(
-  (entries) => {
-    for (const { target, isIntersecting } of entries) {
-      if (!isIntersecting) continue;
-      previewObserver.unobserve(target);
-      getRenderer()
-        .then((renderer) =>
-          renderer.renderThumbnail(target, target.catalogItem),
-        )
-        .then((blob) => {
-          if (!target.isConnected) return;
-          const url = URL.createObjectURL(blob);
-          imageUrls.add(url);
-          const image = element("img");
-          image.src = url;
-          image.alt = `${target.catalogItem.title} 的投影预览`;
-          target.replaceChildren(image);
-        })
-        .catch(() => {
-          if (target.isConnected)
-            target.replaceChildren(
-              element("span", "preview-missing", "点击查看 3D"),
-            );
-        });
-    }
-  },
-  { rootMargin: "100px" },
-);
+
+function savedPreview(entry, className) {
+  const frame = element("div", className);
+  if (entry.previewUrl) {
+    const image = element("img");
+    image.src = entry.previewUrl;
+    image.alt = `${entry.title} 的投影渲染图`;
+    image.loading = "lazy";
+    image.decoding = "async";
+    image.addEventListener(
+      "error",
+      () =>
+        frame.replaceChildren(
+          element("span", "preview-missing", "预览图暂不可用"),
+        ),
+      { once: true },
+    );
+    frame.append(image);
+  } else {
+    frame.append(
+      element("span", "preview-missing", "暂无渲染图 · 点击查看详情"),
+    );
+  }
+  return frame;
+}
 
 function closeViewer() {
   detailController?.abort();
@@ -56,7 +52,32 @@ function closeViewer() {
   detailViewer = null;
 }
 
-async function mountPreview(area, entry, localBytes) {
+async function mountPreview(area, entry, localBytes, interactive = false) {
+  if (!localBytes && !interactive) {
+    const frame = savedPreview(entry, "schematic-viewport saved-preview");
+    const tools = element("div", "preview-tools");
+    const view = element("button", "button", "旋转 / 分层查看 3D");
+    view.type = "button";
+    view.addEventListener(
+      "click",
+      () => {
+        area.replaceChildren();
+        mountPreview(area, entry, undefined, true).catch((error) => {
+          area.append(element("p", "detail-preview-note", error.message));
+        });
+      },
+      { once: true },
+    );
+    tools.append(view);
+    if (entry.previewUrl) {
+      const save = element("a", "button", "保存渲染图");
+      save.href = entry.previewUrl;
+      save.download = `${entry.title.replace(/[\\/:*?"<>|]/g, "_")}-预览.png`;
+      tools.append(save);
+    }
+    area.append(frame, tools);
+    return;
+  }
   const controller = new AbortController();
   detailController = controller;
   const viewport = element("div", "schematic-viewport");
@@ -227,9 +248,7 @@ function card(entry) {
   art.type = "button";
   art.setAttribute("aria-label", `查看 ${entry.title} 的详情`);
   art.addEventListener("click", () => openDetail(entry.id));
-  art.append(element("span", "preview-missing", "正在生成预览…"));
-  art.catalogItem = entry;
-  previewObserver.observe(art);
+  art.append(savedPreview(entry, "saved-card-preview"));
   const body = element("div", "card-body");
   body.append(element("h3", "card-title", entry.title));
   body.append(
@@ -263,9 +282,6 @@ async function loadItems() {
   try {
     const data = await api(`/api/items?${params}`);
     state.total = data.total;
-    previewObserver.disconnect();
-    for (const url of imageUrls) URL.revokeObjectURL(url);
-    imageUrls.clear();
     grid.replaceChildren();
     data.items.forEach((entry) => grid.append(card(entry)));
     if (data.items.length === 0) {
@@ -475,11 +491,21 @@ async function upload(event) {
   const button = $("#submitUpload");
   const message = $("#uploadStatus");
   button.disabled = true;
-  message.textContent = "正在校验并上传，请保持页面打开…";
+  message.textContent = "正在生成渲染图，请保持页面打开…";
   try {
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const preview = await (
+      await getRenderer()
+    ).generatePreview(bytes, (text) => {
+      message.textContent = `生成渲染图：${text}`;
+    });
+    const data = new FormData(form);
+    data.set("file", file);
+    data.set("preview", preview, "preview.png");
+    message.textContent = "正在上传投影和渲染图…";
     const result = await api("/api/items", {
       method: "POST",
-      body: new FormData(form),
+      body: data,
     });
     form.reset();
     $("#uploadDialog").close();

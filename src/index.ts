@@ -1,4 +1,5 @@
 import { MAX_FILE_BYTES, SchematicError, validateLitematic } from "./schematic";
+import { MAX_PREVIEW_BYTES, validatePreview } from "./preview";
 
 interface Env {
   DB: D1Database;
@@ -25,6 +26,7 @@ interface ItemRow {
   region_count: number;
   created_at: number;
   materials?: string | null;
+  preview_size: number;
 }
 
 class ApiError extends Error {
@@ -170,6 +172,9 @@ function item(row: ItemRow, includeMaterials = false) {
     regions: row.region_count,
     createdAt: row.created_at,
     downloadUrl: `/api/items/${row.id}/file`,
+    ...(row.preview_size > 0
+      ? { previewUrl: `/api/items/${row.id}/preview` }
+      : {}),
     ...(includeMaterials
       ? {
           materials: JSON.parse(row.materials ?? "[]") as {
@@ -310,7 +315,7 @@ async function listItems(url: URL, env: Env): Promise<Response> {
     .bind(...values)
     .first<{ n: number }>();
   const rows = await env.DB.prepare(
-    `SELECT id,owner_uuid,owner_name,title,description,tags,hash,file_size,block_count,region_count,created_at FROM items WHERE ${where} ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?`,
+    `SELECT id,owner_uuid,owner_name,title,description,tags,hash,file_size,block_count,region_count,created_at,preview_size FROM items WHERE ${where} ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?`,
   )
     .bind(...values, limit, (page - 1) * limit)
     .all<ItemRow>();
@@ -324,7 +329,7 @@ async function listItems(url: URL, env: Env): Promise<Response> {
 
 async function getItem(id: string, env: Env): Promise<ItemRow> {
   const row = await env.DB.prepare(
-    "SELECT id,owner_uuid,owner_name,title,description,tags,hash,file_size,block_count,region_count,created_at,materials FROM items WHERE id=? AND deleted_at IS NULL",
+    "SELECT id,owner_uuid,owner_name,title,description,tags,hash,file_size,block_count,region_count,created_at,materials,preview_size FROM items WHERE id=? AND deleted_at IS NULL",
   )
     .bind(id)
     .first<ItemRow>();
@@ -336,7 +341,7 @@ async function upload(request: Request, env: Env): Promise<Response> {
   assertOrigin(request);
   const member = await requireSession(request, env);
   const length = Number(request.headers.get("Content-Length"));
-  if (length > MAX_FILE_BYTES + 32_768)
+  if (length > MAX_FILE_BYTES + MAX_PREVIEW_BYTES + 32_768)
     throw new ApiError(413, "上传文件超过 16 MiB");
   if (!request.headers.get("Content-Type")?.startsWith("multipart/form-data;"))
     throw new ApiError(415, "请使用表单上传");
@@ -361,6 +366,22 @@ async function upload(request: Request, env: Env): Promise<Response> {
     throw new ApiError(400, "请选择 .litematic 文件");
   if (file.size === 0 || file.size > MAX_FILE_BYTES)
     throw new ApiError(413, "蓝图须小于 16 MiB");
+  const previewFile = form.get("preview");
+  let preview: Uint8Array | undefined;
+  if (previewFile !== null) {
+    if (
+      !(previewFile instanceof File) ||
+      previewFile.type !== "image/png" ||
+      previewFile.size > MAX_PREVIEW_BYTES
+    )
+      throw new ApiError(400, "预览图须为不超过 512 KiB 的 PNG");
+    preview = new Uint8Array(await previewFile.arrayBuffer());
+    try {
+      validatePreview(preview);
+    } catch (error) {
+      throw new ApiError(400, (error as Error).message);
+    }
+  }
   const recent = await env.DB.prepare(
     "SELECT count(*) AS n FROM items WHERE owner_uuid=? AND created_at>?",
   )
@@ -379,7 +400,9 @@ async function upload(request: Request, env: Env): Promise<Response> {
   if (duplicate) throw new ApiError(409, "你已经上传过这份蓝图");
   const id = crypto.randomUUID();
   const key = `items/${id}.litematic`;
-  await reserveStorage(env, bytes.byteLength);
+  const previewKey = `previews/${id}.png`;
+  const storageBytes = bytes.byteLength + (preview?.byteLength ?? 0);
+  await reserveStorage(env, storageBytes);
   let putAttempted = false;
   try {
     await reserveR2Operation(env, "put");
@@ -388,8 +411,15 @@ async function upload(request: Request, env: Env): Promise<Response> {
       httpMetadata: { contentType: "application/octet-stream" },
       customMetadata: { sha256: hash },
     });
+    if (preview) {
+      await reserveR2Operation(env, "put");
+      await env.FILES.put(previewKey, preview, {
+        httpMetadata: { contentType: "image/png" },
+        customMetadata: { schematicSha256: hash },
+      });
+    }
     await env.DB.prepare(
-      "INSERT INTO items(id,owner_uuid,owner_name,title,description,tags,hash,file_size,block_count,region_count,created_at,materials) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+      "INSERT INTO items(id,owner_uuid,owner_name,title,description,tags,hash,file_size,block_count,region_count,created_at,materials,preview_size) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
     )
       .bind(
         id,
@@ -404,12 +434,13 @@ async function upload(request: Request, env: Env): Promise<Response> {
         metadata.regions.length,
         Date.now(),
         JSON.stringify(metadata.materials),
+        preview?.byteLength ?? 0,
       )
       .run();
   } catch (error) {
     try {
-      if (putAttempted) await env.FILES.delete(key);
-      await releaseStorage(env, bytes.byteLength);
+      if (putAttempted) await env.FILES.delete([key, previewKey]);
+      await releaseStorage(env, storageBytes);
     } catch (cleanupError) {
       console.error(
         "R2 upload cleanup failed; capacity remains reserved",
@@ -438,8 +469,8 @@ async function removeItem(
     .run();
   if (removed.meta.changes === 1) {
     try {
-      await env.FILES.delete(`items/${id}.litematic`);
-      await releaseStorage(env, row.file_size);
+      await env.FILES.delete([`items/${id}.litematic`, `previews/${id}.png`]);
+      await releaseStorage(env, row.file_size + row.preview_size);
     } catch (error) {
       console.error("R2 cleanup failed; capacity remains reserved", error);
     }
@@ -461,6 +492,32 @@ async function downloadItem(row: ItemRow, env: Env): Promise<Response> {
       "X-Content-SHA256": row.hash,
     },
   });
+}
+
+async function downloadPreview(
+  request: Request,
+  row: ItemRow,
+  env: Env,
+): Promise<Response> {
+  if (!row.preview_size) throw new ApiError(404, "这份蓝图尚未生成预览图");
+  const key = new Request(request.url);
+  const cache = await caches.open("tongcraft-previews-v1");
+  const cached = await cache.match(key);
+  if (cached) return cached;
+  await reserveR2Operation(env, "get");
+  const object = await env.FILES.get(`previews/${row.id}.png`);
+  if (!object) throw new ApiError(503, "预览图暂时不可用");
+  const response = new Response(object.body, {
+    headers: {
+      "Content-Type": "image/png",
+      "Content-Length": String(row.preview_size),
+      "Cache-Control": "public, max-age=86400, immutable",
+      "X-Content-Type-Options": "nosniff",
+      ETag: `"${row.id}"`,
+    },
+  });
+  await cache.put(key, response.clone());
+  return response;
 }
 
 export default {
@@ -495,11 +552,15 @@ export default {
         return await listItems(url, env);
       if (path === "/api/items" && request.method === "POST")
         return await upload(request, env);
-      const match = path.match(/^\/api\/items\/([a-f0-9-]{36})(?:\/(file))?$/);
+      const match = path.match(
+        /^\/api\/items\/([a-f0-9-]{36})(?:\/(file|preview))?$/,
+      );
       if (match) {
         const row = await getItem(match[1], env);
         if (match[2] === "file" && request.method === "GET")
           return await downloadItem(row, env);
+        if (match[2] === "preview" && request.method === "GET")
+          return await downloadPreview(request, row, env);
         if (!match[2] && request.method === "GET")
           return json({ item: item(row, true) });
         if (!match[2] && request.method === "DELETE")

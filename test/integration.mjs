@@ -209,11 +209,33 @@ test(
     );
 
     const bytes = fixture();
+    const preview = Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLttAAAAABJRU5ErkJggg==",
+      "base64",
+    );
     const form = new FormData();
     form.set("title", "测试建筑");
     form.set("description", "本地集成测试");
     form.set("tags", "建筑, 测试");
     form.set("file", new File([bytes], "sample.litematic"));
+    form.set(
+      "preview",
+      new File([preview], "preview.png", { type: "image/png" }),
+    );
+    const invalid = new FormData();
+    for (const [key, value] of form) invalid.set(key, value);
+    invalid.set(
+      "preview",
+      new File(["<svg></svg>"], "preview.png", { type: "image/png" }),
+    );
+    await checked(
+      await fetch(`${base}/api/items`, {
+        method: "POST",
+        headers: { ...origin, Cookie: cookie },
+        body: invalid,
+      }),
+      400,
+    );
     const uploaded = await checked(
       await fetch(`${base}/api/items`, {
         method: "POST",
@@ -229,8 +251,8 @@ test(
         200,
       )
     ).json();
-    assert.equal(afterUpload.storageBytes, bytes.length);
-    assert.equal(afterUpload.puts, 1);
+    assert.equal(afterUpload.storageBytes, bytes.length + preview.length);
+    assert.equal(afterUpload.puts, 2);
 
     const listed = await (
       await checked(
@@ -243,13 +265,22 @@ test(
     assert.equal(listed.total, 1);
     assert.equal(listed.items[0].id, id);
     assert.equal(listed.items[0].blocks, 1);
-    assert.equal(listed.items[0].previewUrl, undefined);
+    assert.equal(listed.items[0].previewUrl, `/api/items/${id}/preview`);
+    const image = await checked(
+      await fetch(`${base}${listed.items[0].previewUrl}`),
+      200,
+    );
+    assert.equal(image.headers.get("Content-Type"), "image/png");
+    assert.match(image.headers.get("Cache-Control"), /public.*immutable/);
+    assert.deepEqual(Buffer.from(await image.arrayBuffer()), preview);
+    await checked(await fetch(`${base}${listed.items[0].previewUrl}`), 200);
     const detail = await (
       await checked(await fetch(`${base}/api/items/${id}`), 200)
     ).json();
     assert.deepEqual(detail.item.materials, [
       { id: "minecraft:stone", count: 1 },
     ]);
+    assert.equal(detail.item.previewUrl, listed.items[0].previewUrl);
     const download = await checked(
       await fetch(`${base}/api/items/${id}/file`),
       200,
@@ -265,7 +296,11 @@ test(
         200,
       )
     ).json();
-    assert.equal(afterDownload.gets, 1);
+    assert.equal(
+      afterDownload.gets,
+      2,
+      "Repeated previews must use the edge cache",
+    );
     await checked(await fetch(`${base}/items/${id}`), 200);
     await checked(
       await fetch(`${base}/api/items/${id}`, {
@@ -275,6 +310,7 @@ test(
       200,
     );
     await checked(await fetch(`${base}/api/items/${id}`), 404);
+    await checked(await fetch(`${base}/api/items/${id}/preview`), 404);
     const afterDelete = await (
       await checked(
         await fetch(`${base}/api/usage`, { headers: { Cookie: cookie } }),
@@ -282,6 +318,8 @@ test(
       )
     ).json();
     assert.equal(afterDelete.storageBytes, 0);
+    // Older API clients can still upload a schematic without a preview.
+    form.delete("preview");
     await checked(
       await fetch(`${base}/api/session/exchange`, {
         method: "POST",
@@ -320,6 +358,32 @@ test(
       507,
     );
     await sql("UPDATE storage_budget SET used_bytes=0 WHERE id=1");
+    // Failure on the image write must clean up the already-written schematic.
+    await sql("UPDATE r2_daily_usage SET puts=499");
+    form.set(
+      "preview",
+      new File([preview], "preview.png", { type: "image/png" }),
+    );
+    await checked(
+      await fetch(`${base}/api/items`, {
+        method: "POST",
+        headers: { ...origin, Cookie: cookie },
+        body: form,
+      }),
+      429,
+    );
+    const rollbackUsage = await (
+      await checked(
+        await fetch(`${base}/api/usage`, {
+          headers: { Cookie: cookie },
+        }),
+        200,
+      )
+    ).json();
+    assert.equal(rollbackUsage.storageBytes, 0);
+    assert.equal((await (await fetch(`${base}/api/items`)).json()).total, 0);
+    form.delete("preview");
+    await sql("UPDATE r2_daily_usage SET puts=0");
     const secondUpload = await checked(
       await fetch(`${base}/api/items`, {
         method: "POST",
@@ -329,6 +393,11 @@ test(
       201,
     );
     const secondId = (await secondUpload.json()).id;
+    const legacy = await (
+      await checked(await fetch(`${base}/api/items/${secondId}`), 200)
+    ).json();
+    assert.equal(legacy.item.previewUrl, undefined);
+    await checked(await fetch(`${base}/api/items/${secondId}/preview`), 404);
     await sql("UPDATE r2_daily_usage SET gets=10000");
     await checked(await fetch(`${base}/api/items/${secondId}/file`), 429);
     await checked(

@@ -37,6 +37,9 @@ export interface RenderOptions {
   onProgress?: (text: string) => void;
   resourcePack?: File;
   interactive?: boolean;
+  width?: number;
+  height?: number;
+  pixelRatio?: number;
 }
 export interface Viewer {
   schematic: Schematic;
@@ -183,7 +186,9 @@ export async function renderSchematic(
     if (options.resourcePack) disposeCache(resources);
     throw error;
   }
-  renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
+  renderer.setPixelRatio(
+    options.pixelRatio ?? Math.min(devicePixelRatio || 1, 2),
+  );
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.setClearColor(0xf5f5f3, 1);
   const canvas = renderer.domElement;
@@ -284,8 +289,8 @@ export async function renderSchematic(
       );
     }
     const dimensions = () => ({
-      width: Math.max(container.clientWidth, 320),
-      height: Math.max(container.clientHeight, 240),
+      width: options.width ?? Math.max(container.clientWidth, 320),
+      height: options.height ?? Math.max(container.clientHeight, 240),
     });
     const reset = () => {
       const { width, height } = dimensions();
@@ -359,50 +364,25 @@ export async function renderSchematic(
   }
 }
 
-// Card previews are rendered serially and cached locally. They contain exactly
-// the same geometry as the interactive view and never flatten the structure.
-let queue: Promise<unknown> = Promise.resolve();
-export function renderThumbnail(
-  container: HTMLElement,
-  item: CatalogItem,
+/** Generate once on upload; the published PNG is shared by every visitor. */
+export async function generatePreview(
+  bytes: Uint8Array,
+  onProgress?: (text: string) => void,
 ): Promise<Blob> {
-  const task = queue
-    .catch(() => {})
-    .then(async () => {
-      if (!container.isConnected)
-        throw new DOMException("卡片已离开页面", "AbortError");
-      const { sha1 } = await minecraftMetadata();
-      const cacheKey = new Request(
-        `${location.origin}/__preview/v3/${sha1}/${item.sha256}`,
-      );
-      const cache = await caches
-        .open("tongcraft-schematic-previews-v3")
-        .catch(() => null);
-      const cached = await cache?.match(cacheKey);
-      if (cached) return cached.blob();
-      const viewer = await renderSchematic(
-        container,
-        await loadSchematic(item),
-        { interactive: false },
-      );
-      try {
-        const blob = await viewer.capture();
-        if (cache) {
-          await cache
-            .put(
-              cacheKey,
-              new Response(blob, { headers: { "Content-Type": "image/png" } }),
-            )
-            .catch(() => {});
-          const keys = await cache.keys();
-          for (const key of keys.slice(0, Math.max(0, keys.length - 48)))
-            await cache.delete(key);
-        }
-        return blob;
-      } finally {
-        viewer.dispose();
-      }
-    });
-  queue = task;
-  return task;
+  const container = document.createElement("div");
+  const viewer = await renderSchematic(container, bytes, {
+    interactive: false,
+    width: 768,
+    height: 480,
+    pixelRatio: 1,
+    onProgress,
+  });
+  try {
+    const blob = await viewer.capture();
+    if (blob.size > 512 * 1024)
+      throw new Error("渲染图超过 512 KiB，请使用更小的投影");
+    return blob;
+  } finally {
+    viewer.dispose();
+  }
 }
